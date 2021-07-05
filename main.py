@@ -33,7 +33,7 @@ def rebalance(containers, max_percent_deviation=10):
 
     if balancer.is_complete(containers):
         print_status(containers, output_stats, balancer)
-        return
+        return containers
 
     print_status(containers, output_stats, balancer)
 
@@ -49,7 +49,7 @@ def rebalance(containers, max_percent_deviation=10):
 
         if balancer.is_complete(containers):
             print_status(containers, output_stats, balancer)
-            return
+            return containers
 
     print_status(containers, output_stats, balancer)
 
