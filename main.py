@@ -1,4 +1,4 @@
-from balancer import Balancer, prepare_data
+from balancer import Balancer, prepare_data, Conditions, PickUpConditions, SIZE, LOAD
 from data_factory import data_factory
 from helper import print_status, timer
 
@@ -6,7 +6,7 @@ from helper import print_status, timer
 in_data = data_factory(
     params_tuple=(1, 100),
     container_count=50,
-    records_count=50000,
+    records_count=10000,
 )
 
 
@@ -20,22 +20,32 @@ def rebalance(containers, max_percent_deviation=10):
         'max_size_deviation': max_size_deviation,
         'max_load_deviation': max_load_deviation,
     }
+    print(output_stats)
 
     balancer = Balancer(list(), max_size_deviation, max_load_deviation)
+    deviations = (max_size_deviation, max_load_deviation)
     print_status(containers, output_stats, balancer)
 
+    conditions = Conditions(deviations)
     for container in containers:
-        balancer.donate(container)
-        balancer.receive(container)
+        balancer.donate(container, conditions)
+        balancer.receive(container, conditions)
 
     if balancer.is_complete(containers):
         print_status(containers, output_stats, balancer)
         return
 
-    # Раскладываем оставшиеся записи по контейнерам
+    print_status(containers, output_stats, balancer)
+
+    size_conditions = PickUpConditions(deviations, SIZE)
+    load_conditions = PickUpConditions(deviations, LOAD)
+
     for container in containers:
-        balancer.receive(container, True, 0)
-        balancer.receive(container, True, 1)
+        balancer.donate(container, size_conditions)
+        balancer.donate(container, load_conditions)
+
+        balancer.receive(container, size_conditions)
+        balancer.receive(container, load_conditions)
 
         if balancer.is_complete(containers):
             print_status(containers, output_stats, balancer)
@@ -46,4 +56,4 @@ def rebalance(containers, max_percent_deviation=10):
     return containers
 
 
-rebalance(in_data, 10)
+rebalance(in_data, 5)

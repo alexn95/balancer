@@ -1,6 +1,49 @@
 import numpy as np
 
 
+SIZE = 0
+LOAD = 1
+
+
+class Conditions:
+
+	def __init__(self, deviations):
+		self.deviations = deviations
+
+	def _target_weight(self, target):
+		return abs(target[SIZE]) + abs(target[LOAD])
+
+	def donate_return_condition(self, target):
+		return target[SIZE] < 0 and target[LOAD] < 0
+
+	def donate_break_condition(self, target, new_target):
+		return self._target_weight(new_target) >= self._target_weight(target)
+
+	def receive_return_condition(self, target):
+		return target[SIZE] > 0 and target[LOAD] > 0
+
+	def receive_break_condition(self, target, new_target):
+		return self._target_weight(new_target) >= self._target_weight(target)
+
+
+class PickUpConditions(Conditions):
+	def __init__(self, deviations, receive_param):
+		super().__init__(deviations)
+		self.receive_param = receive_param
+
+	def donate_return_condition(self, target):
+		return target[self.receive_param] < 0
+
+	def donate_break_condition(self, target, new_target):
+		return new_target[self.receive_param] < 0
+
+	def receive_return_condition(self, target):
+		return target[self.receive_param] > 0
+
+	def receive_break_condition(self, target, new_target):
+		return new_target[self.receive_param] > 0
+
+
 class Balancer:
 	
 	def __init__(self, free_records, max_size_deviation, max_load_deviation):
@@ -11,19 +54,16 @@ class Balancer:
 		self.receive_count = 0
 		self.donate_count = 0
 		self.stats = {
-			'donate': 0,
-			'receive': 0,
-			'soft_donate': 0,
-			'soft_receive': 0,
+			'default_donate': 0,
+			'default_receive': 0,
+			'pick_up_donate': 0,
+			'pick_up_receive': 0,
 		}
 
 	def _closest_record(self, target, nodes) -> int:
 		deltas = nodes - target
 		dist_2 = np.einsum('ij,ij->i', deltas, deltas)
 		return int(np.argmin(dist_2))
-
-	def _target_weight(self, target):
-		return abs(target[0]) + abs(target[1])
 
 	def is_complete(self, containers):
 		if self.free_records:
@@ -37,11 +77,9 @@ class Balancer:
 		print('COMPLETE')
 		return True
 
-	def donate(self, container, soft=False, param=0):
+	def donate(self, container, conditions: Conditions):
 		target = (container['size_diff'], container['load_diff'])
-		if soft and target[param] < self.max_load_deviation:
-			return
-		if not soft and target[0] < 0 and target[1] < 0:
+		if conditions.donate_return_condition(target):
 			return
 
 		records = np.asarray([(record['size'], record['average_load']) for record in container['records']])
@@ -51,28 +89,23 @@ class Balancer:
 			record = records[record_index]
 			new_target = (target[0] - record[0], target[1] - record[1])
 
-			if not soft and self._target_weight(new_target) >= self._target_weight(target):
-				break
-
-			if soft and target[param] < self.deviations[param]:
+			if conditions.donate_break_condition(target, new_target):
 				break
 
 			target = new_target
 			records = np.delete(records, record_index, axis=0)
 			self.free_records.append(container['records'].pop(record_index))
 			self.donate_count += 1
-			if soft:
-				self.stats['soft_donate'] += 1
+			if isinstance(conditions, PickUpConditions):
+				self.stats['pick_up_donate'] += 1
 			else:
-				self.stats['donate'] += 1
+				self.stats['default_donate'] += 1
 
 		container['size_diff'], container['load_diff'] = target
 
-	def receive(self, container, soft=False, param=0):
+	def receive(self, container, conditions: Conditions):
 		target = (container['size_diff'], container['load_diff'])
-		if soft and target[param] > 0:
-			return
-		if not soft and target[0] > 0 and target[1] > 0:
+		if conditions.receive_return_condition(target):
 			return
 
 		records = np.asarray([(record['size'], record['average_load']) for record in self.free_records])
@@ -82,20 +115,17 @@ class Balancer:
 			record = records[record_index]
 			new_target = (target[0] + record[0], target[1] + record[1])
 
-			if not soft and self._target_weight(new_target) >= self._target_weight(target):
-				break
-
-			if soft and target[param] > 0:
+			if conditions.receive_break_condition(target, new_target):
 				break
 
 			target = new_target
 			records = np.delete(records, record_index, axis=0)
 			container['records'].append(self.free_records.pop(record_index))
 			self.receive_count += 1
-			if soft:
-				self.stats['soft_receive'] += 1
+			if isinstance(conditions, PickUpConditions):
+				self.stats['pick_up_receive'] += 1
 			else:
-				self.stats['receive'] += 1
+				self.stats['default_receive'] += 1
 
 		container['size_diff'], container['load_diff'] = target
 

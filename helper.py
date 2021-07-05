@@ -52,6 +52,7 @@ def print_status(containers, stats, balancer):
     for container in containers:
         if abs(container['size_diff']) > stats['max_size_deviation']:
             size_disbalance += 1
+            not_balanced.append((container['size_diff'], container['load_diff']))
 
         if abs(container['load_diff']) > stats['max_load_deviation']:
             load_disbalance += 1
